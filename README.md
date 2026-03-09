@@ -1,5 +1,7 @@
 # LoadSim
 
+[![CI](https://github.com/fanderchan/loadsim/actions/workflows/ci.yml/badge.svg)](https://github.com/fanderchan/loadsim/actions/workflows/ci.yml)
+
 `LoadSim` 是一个资源场景模拟工具，用于在 Linux 主机上构造可控的 CPU、内存，以及 CPU+内存组合占用场景。
 
 正式产品名：
