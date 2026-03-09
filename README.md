@@ -168,6 +168,12 @@ LoadSim 0.2.0
 - CPU 使用 2 个 worker
 - 内存占用 1024MB
 
+如果你希望 `combo` 里的 CPU 也按整机百分比自适应控制，可以这样写：
+
+```bash
+./loadsim combo --cpu-scope host --cpu-percent 40 --ram-size 1024
+```
+
 ### 4. 运行波动场景
 
 CPU 波动：
@@ -298,6 +304,7 @@ Flags:
 CPU 相关：
 
 - `--cpu-mode`
+- `--cpu-scope`
 - `--cpu-percent`
 - `--cpu-min`
 - `--cpu-max`
@@ -333,6 +340,7 @@ Flags:
       --cpu-mode string       CPU mode: fixed or wave (default "fixed")
       --cpu-percent float     fixed CPU target percent (default 50)
       --cpu-period int        wave CPU period in seconds (default 60)
+      --cpu-scope string      CPU target scope: workers or host (default "workers")
       --ram-max-size int      wave RAM maximum in MB (default 1024)
       --ram-min-size int      wave RAM minimum in MB (default 256)
       --ram-mode string       RAM mode: fixed or wave (default "fixed")
@@ -405,7 +413,7 @@ stopped: time limit reached
 命令：
 
 ```bash
-./loadsim combo --cpu-percent 10 --cpu-cores 1 --ram-size 64 --time 1 --status-interval 1
+./loadsim combo --cpu-scope workers --cpu-percent 10 --cpu-cores 1 --ram-size 64 --time 1 --status-interval 1
 ```
 
 输出：
@@ -415,6 +423,14 @@ stopped: time limit reached
 [18:04:24] combo cpu_scope=workers cpu_target=10.0% cpu_drive=10.0% workers=1 ram_target=64MB ram_current=64MB host_cpu=8.2% host_mem=19.2%
 stopped: time limit reached
 ```
+
+如果 `combo` 想按整机 CPU 百分比做自适应占用，可以使用：
+
+```bash
+./loadsim combo --cpu-scope host --cpu-percent 30 --ram-size 1024
+```
+
+此时 `cpu_target` 表示整机 CPU 目标值，`cpu_drive` 表示当前分配给 LoadSim 自身 worker 集合的实际驱动值。
 
 ## 输出字段说明
 
@@ -478,6 +494,7 @@ stopped: time limit reached
 ./loadsim cpu --mode fixed --percent 30 --cores 2
 ./loadsim ram --mode fixed --size 2048
 ./loadsim combo --cpu-percent 30 --cpu-cores 2 --ram-size 2048
+./loadsim combo --cpu-scope host --cpu-percent 30 --ram-size 2048
 ```
 
 ### 波动场景
@@ -499,6 +516,7 @@ stopped: time limit reached
 
 - `cpu --scope workers` 的百分比是针对所选 worker 集合的目标值。
 - `cpu --scope host` 会按整机 CPU 百分比做自适应控制。
+- `combo --cpu-scope host` 会让组合模式里的 CPU 部分也按整机 CPU 百分比做自适应控制。
 - 在 `--scope host` 下，如果目标超出当前 worker 数可提供的整机上限，程序会直接报错。
 - `--cores=0` 表示使用主机全部核心。
 - `ram` 会真实分配并触碰内存页，确保占用真正落到内存上。

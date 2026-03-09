@@ -17,6 +17,7 @@ var (
 	comboCPUPeriodSec   int
 	comboCPUCores       int
 	comboCPUMode        string
+	comboCPUScope       string
 	comboRAMMode        string
 	comboRAMSizeMB      int
 	comboRAMMinSizeMB   int
@@ -41,6 +42,7 @@ var comboCmd = &cobra.Command{
 
 		cpuCfg := stress.CPUConfig{
 			Mode:       cpuMode,
+			Scope:      stress.CPUScope(comboCPUScope),
 			Percent:    comboCPUPercent,
 			MinPercent: comboCPUMinPercent,
 			MaxPercent: comboCPUMaxPercent,
@@ -95,6 +97,7 @@ func init() {
 	rootCmd.AddCommand(comboCmd)
 
 	comboCmd.Flags().StringVar(&comboCPUMode, "cpu-mode", "fixed", "CPU mode: fixed or wave")
+	comboCmd.Flags().StringVar(&comboCPUScope, "cpu-scope", "workers", "CPU target scope: workers or host")
 	comboCmd.Flags().Float64Var(&comboCPUPercent, "cpu-percent", 50, "fixed CPU target percent")
 	comboCmd.Flags().Float64Var(&comboCPUMinPercent, "cpu-min", 20, "wave CPU minimum percent")
 	comboCmd.Flags().Float64Var(&comboCPUMaxPercent, "cpu-max", 80, "wave CPU maximum percent")
