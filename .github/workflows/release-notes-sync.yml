@@ -1,0 +1,127 @@
+name: Release Notes Sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/release-notes/**"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/release-notes-sync.yml"
+      - "cmd/version.go"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          set -euo pipefail
+
+          VERSION="$(go run . version | awk '{print $2}')"
+          TAG="v${VERSION}"
+
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check GitHub release exists
+        if: steps.tag.outputs.exists == 'true'
+        id: release_check
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag = process.env.RELEASE_TAG;
+
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag,
+              });
+              core.setOutput('exists', 'true');
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput('exists', 'false');
+                return;
+              }
+              throw error;
+            }
+
+      - name: Generate auto release notes
+        if: steps.release_check.outputs.exists == 'true'
+        id: auto_notes
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const { owner, repo } = context.repo;
+            const tag = process.env.RELEASE_TAG;
+            const response = await github.rest.repos.generateReleaseNotes({
+              owner,
+              repo,
+              tag_name: tag,
+            });
+
+            fs.mkdirSync('dist', { recursive: true });
+            fs.writeFileSync(
+              path.join('dist', 'auto-release-notes.md'),
+              response.data.body || '',
+            );
+
+            core.setOutput('name', response.data.name || tag);
+
+      - name: Compose release notes
+        if: steps.release_check.outputs.exists == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          SUMMARY_FILE=".github/release-notes/${RELEASE_TAG}.md"
+          BODY_FILE="dist/release-body.md"
+
+          : > "$BODY_FILE"
+
+          if [ -f "$SUMMARY_FILE" ]; then
+            cat "$SUMMARY_FILE" >> "$BODY_FILE"
+            printf "\n\n---\n\n## Auto Changelog\n\n" >> "$BODY_FILE"
+          fi
+
+          cat dist/auto-release-notes.md >> "$BODY_FILE"
+
+      - name: Update GitHub release
+        if: steps.release_check.outputs.exists == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.auto_notes.outputs.name }}
+          body_path: dist/release-body.md
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-beta.') }}
