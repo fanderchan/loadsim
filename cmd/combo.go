@@ -139,9 +139,11 @@ func printComboStatus(cpuStressor *stress.CPUStressor, ramStressor *stress.RAMSt
 	stats, err := system.Snapshot(150 * time.Millisecond)
 	if err != nil {
 		fmt.Printf(
-			"[%s] combo cpu=%.1f%%/%dworkers ram=%dMB/%dMB\n",
+			"[%s] combo cpu_scope=%s cpu_target=%.1f%% cpu_drive=%.1f%%/%dworkers ram=%dMB/%dMB\n",
 			time.Now().Format("15:04:05"),
-			cpuStatus.TargetPercent,
+			cpuStatus.Scope,
+			cpuStatus.RequestedPercent,
+			cpuStatus.AppliedPercent,
 			cpuStatus.Cores,
 			ramStatus.CurrentMB,
 			ramStatus.TargetMB,
@@ -150,9 +152,11 @@ func printComboStatus(cpuStressor *stress.CPUStressor, ramStressor *stress.RAMSt
 	}
 
 	fmt.Printf(
-		"[%s] combo cpu_target=%.1f%% workers=%d ram_target=%dMB ram_current=%dMB host_cpu=%.1f%% host_mem=%.1f%%\n",
+		"[%s] combo cpu_scope=%s cpu_target=%.1f%% cpu_drive=%.1f%% workers=%d ram_target=%dMB ram_current=%dMB host_cpu=%.1f%% host_mem=%.1f%%\n",
 		time.Now().Format("15:04:05"),
-		cpuStatus.TargetPercent,
+		cpuStatus.Scope,
+		cpuStatus.RequestedPercent,
+		cpuStatus.AppliedPercent,
 		cpuStatus.Cores,
 		ramStatus.TargetMB,
 		ramStatus.CurrentMB,

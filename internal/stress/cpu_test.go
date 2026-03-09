@@ -15,6 +15,7 @@ func TestNewCPUStressorValidation(t *testing.T) {
 			name: "fixed ok",
 			cfg: CPUConfig{
 				Mode:    ModeFixed,
+				Scope:   ScopeWorkers,
 				Percent: 50,
 				Cores:   2,
 			},
@@ -31,6 +32,7 @@ func TestNewCPUStressorValidation(t *testing.T) {
 			name: "wave invalid bounds",
 			cfg: CPUConfig{
 				Mode:       ModeWave,
+				Scope:      ScopeWorkers,
 				MinPercent: 80,
 				MaxPercent: 20,
 				Period:     60 * time.Second,
@@ -41,8 +43,19 @@ func TestNewCPUStressorValidation(t *testing.T) {
 			name: "wave invalid period",
 			cfg: CPUConfig{
 				Mode:       ModeWave,
+				Scope:      ScopeWorkers,
 				MinPercent: 20,
 				MaxPercent: 80,
+			},
+			wantErr: true,
+		},
+		{
+			name: "host fixed unreachable target",
+			cfg: CPUConfig{
+				Mode:    ModeFixed,
+				Scope:   ScopeHost,
+				Percent: 100,
+				Cores:   1,
 			},
 			wantErr: true,
 		},
@@ -64,6 +77,7 @@ func TestNewCPUStressorValidation(t *testing.T) {
 func TestCPUWavePercent(t *testing.T) {
 	stressor, err := NewCPUStressor(CPUConfig{
 		Mode:       ModeWave,
+		Scope:      ScopeWorkers,
 		MinPercent: 20,
 		MaxPercent: 80,
 		Period:     60 * time.Second,
@@ -88,5 +102,19 @@ func TestCPUWavePercent(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("elapsed=%v got=%.1f want=%.1f", tc.elapsed, got, tc.want)
 		}
+	}
+}
+
+func TestCPUPercentConversionHelpers(t *testing.T) {
+	if got := maxReachableHostPercent(4, 160); got != 2.5 {
+		t.Fatalf("maxReachableHostPercent got %.2f want 2.50", got)
+	}
+
+	if got := workerPercentToHostPercent(50, 4, 160); got != 1.25 {
+		t.Fatalf("workerPercentToHostPercent got %.2f want 1.25", got)
+	}
+
+	if got := hostPercentToWorkerPercent(50, 160, 160); got != 50 {
+		t.Fatalf("hostPercentToWorkerPercent got %.2f want 50.00", got)
 	}
 }

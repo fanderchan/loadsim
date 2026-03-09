@@ -12,6 +12,7 @@ import (
 
 var (
 	cpuMode           string
+	cpuScope          string
 	cpuPercent        float64
 	cpuMinPercent     float64
 	cpuMaxPercent     float64
@@ -32,6 +33,7 @@ var cpuCmd = &cobra.Command{
 
 		cfg := stress.CPUConfig{
 			Mode:       mode,
+			Scope:      stress.CPUScope(cpuScope),
 			Percent:    cpuPercent,
 			MinPercent: cpuMinPercent,
 			MaxPercent: cpuMaxPercent,
@@ -67,6 +69,7 @@ func init() {
 	rootCmd.AddCommand(cpuCmd)
 
 	cpuCmd.Flags().StringVar(&cpuMode, "mode", "fixed", "fixed or wave")
+	cpuCmd.Flags().StringVar(&cpuScope, "scope", "workers", "CPU target scope: workers or host")
 	cpuCmd.Flags().Float64Var(&cpuPercent, "percent", 50, "fixed CPU target percent")
 	cpuCmd.Flags().Float64Var(&cpuMinPercent, "min", 20, "wave mode minimum CPU percent")
 	cpuCmd.Flags().Float64Var(&cpuMaxPercent, "max", 80, "wave mode maximum CPU percent")
@@ -81,20 +84,24 @@ func printCPUStatus(stressor *stress.CPUStressor) {
 	stats, err := system.Snapshot(150 * time.Millisecond)
 	if err != nil {
 		fmt.Printf(
-			"[%s] cpu mode=%s target=%.1f%% workers=%d\n",
+			"[%s] cpu mode=%s scope=%s target=%.1f%% drive=%.1f%% workers=%d\n",
 			time.Now().Format("15:04:05"),
 			status.Mode,
-			status.TargetPercent,
+			status.Scope,
+			status.RequestedPercent,
+			status.AppliedPercent,
 			status.Cores,
 		)
 		return
 	}
 
 	fmt.Printf(
-		"[%s] cpu mode=%s target=%.1f%% workers=%d host_cpu=%.1f%% host_mem=%.1f%%\n",
+		"[%s] cpu mode=%s scope=%s target=%.1f%% drive=%.1f%% workers=%d host_cpu=%.1f%% host_mem=%.1f%%\n",
 		time.Now().Format("15:04:05"),
 		status.Mode,
-		status.TargetPercent,
+		status.Scope,
+		status.RequestedPercent,
+		status.AppliedPercent,
 		status.Cores,
 		stats.CPUPercent,
 		stats.MemoryPercent,

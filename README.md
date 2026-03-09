@@ -124,7 +124,8 @@ LoadSim 0.2.0
 含义：
 
 - 使用 4 个 worker
-- 目标 CPU 占用约 50%
+- `--scope` 默认为 `workers`
+- 以上命令表示 4 个 worker 的总负载按 50% 运行，不是整机 50%
 - 一直运行，直到手动停止
 
 如果只运行 60 秒：
@@ -132,6 +133,18 @@ LoadSim 0.2.0
 ```bash
 ./loadsim cpu --mode fixed --percent 50 --cores 4 --time 60
 ```
+
+如果你要的是“整机稳定占用 50% CPU，并在其他进程变忙时自动让出 CPU”，应使用：
+
+```bash
+./loadsim cpu --mode fixed --scope host --percent 50
+```
+
+这个模式会按整机 CPU 百分比做自适应控制：
+
+- 如果主机当前 CPU 低于目标值，LoadSim 会增加自身负载
+- 如果主机当前 CPU 接近或高于目标值，LoadSim 会降低自身负载
+- 如果其他进程已经把主机 CPU 打到目标值以上，LoadSim 会把自身 CPU 占用降到接近 0
 
 ### 2. 固定占用内存
 
@@ -188,6 +201,7 @@ CPU 和 RAM 同时波动：
 主要参数：
 
 - `--mode`：`fixed` 或 `wave`
+- `--scope`：`workers` 或 `host`
 - `--percent`：固定模式 CPU 目标占用百分比
 - `--min`：波动模式最小 CPU 百分比
 - `--max`：波动模式最大 CPU 百分比
@@ -195,6 +209,27 @@ CPU 和 RAM 同时波动：
 - `--cores`：worker 数，`0` 表示使用主机全部核心
 - `--time`：运行时长，单位秒，`0` 表示不自动停止
 - `--status-interval`：状态输出间隔，单位秒
+
+`cpu` 有两种百分比语义：
+
+- `--scope workers`：百分比作用在 worker 集合上
+- `--scope host`：百分比作用在整机 CPU 上，并通过自适应控制来逼近目标值
+
+例如在一台 160 核机器上：
+
+```bash
+./loadsim cpu --mode fixed --percent 50 --cores 4
+```
+
+这不是整机 50%，而是大约 `200%` 单核 CPU 负载，总体只相当于整机约 `1.25%`。
+
+如果你写：
+
+```bash
+./loadsim cpu --mode fixed --scope host --percent 50 --cores 4
+```
+
+程序会直接报错，因为 4 个 worker 在 160 核机器上最多只能提供约 `2.5%` 的整机 CPU，目标不可达。
 
 帮助输出示例：
 
@@ -212,6 +247,7 @@ Flags:
       --mode string           fixed or wave (default "fixed")
       --percent float         fixed CPU target percent (default 50)
       --period int            wave mode period in seconds (default 60)
+      --scope string          CPU target scope: workers or host (default "workers")
       --status-interval int   status print interval in seconds (default 2)
       --time int              run time in seconds, 0 means no limit
 ```
@@ -315,18 +351,40 @@ Flags:
 命令：
 
 ```bash
-./loadsim cpu --mode fixed --percent 10 --cores 1 --time 1 --status-interval 1
+./loadsim cpu --mode fixed --scope workers --percent 10 --cores 1 --time 1 --status-interval 1
 ```
 
 输出：
 
 ```text
-[09:39:56] cpu mode=fixed target=10.0% workers=1 host_cpu=36.7% host_mem=19.4%
-[09:39:57] cpu mode=fixed target=10.0% workers=1 host_cpu=8.3% host_mem=19.6%
+[18:04:23] cpu mode=fixed scope=workers target=10.0% drive=10.0% workers=1 host_cpu=18.3% host_mem=19.3%
+[18:04:24] cpu mode=fixed scope=workers target=10.0% drive=10.0% workers=1 host_cpu=9.8% host_mem=19.3%
 stopped: time limit reached
 ```
 
-### 示例 2：固定 RAM 占用
+### 示例 2：整机 CPU 自适应占用
+
+命令：
+
+```bash
+./loadsim cpu --mode fixed --scope host --percent 10 --time 1 --status-interval 1
+```
+
+输出：
+
+```text
+[18:04:59] cpu mode=fixed scope=host target=10.0% drive=0.0% workers=4 host_cpu=0.0% host_mem=18.7%
+[18:05:00] cpu mode=fixed scope=host target=10.0% drive=10.0% workers=4 host_cpu=18.3% host_mem=18.7%
+stopped: time limit reached
+```
+
+这里 `scope=host` 的含义是：
+
+- `target=10.0%` 是整机 CPU 目标值
+- `drive=10.0%` 是当前施加到 worker 集合上的占用比例
+- 当其他进程变忙时，`drive` 会下降；如果其他进程已经把整机 CPU 打到目标值以上，`drive` 会降到接近 `0`
+
+### 示例 3：固定 RAM 占用
 
 命令：
 
@@ -342,7 +400,7 @@ stopped: time limit reached
 stopped: time limit reached
 ```
 
-### 示例 3：同时占用 CPU 和 RAM
+### 示例 4：同时占用 CPU 和 RAM
 
 命令：
 
@@ -353,8 +411,8 @@ stopped: time limit reached
 输出：
 
 ```text
-[09:39:56] combo cpu_target=10.0% workers=1 ram_target=64MB ram_current=64MB host_cpu=27.9% host_mem=19.6%
-[09:39:57] combo cpu_target=10.0% workers=1 ram_target=64MB ram_current=64MB host_cpu=8.3% host_mem=19.4%
+[18:04:23] combo cpu_scope=workers cpu_target=10.0% cpu_drive=10.0% workers=1 ram_target=64MB ram_current=64MB host_cpu=5.1% host_mem=19.3%
+[18:04:24] combo cpu_scope=workers cpu_target=10.0% cpu_drive=10.0% workers=1 ram_target=64MB ram_current=64MB host_cpu=8.2% host_mem=19.2%
 stopped: time limit reached
 ```
 
@@ -363,13 +421,15 @@ stopped: time limit reached
 ### `cpu` 输出
 
 ```text
-[09:39:56] cpu mode=fixed target=10.0% workers=1 host_cpu=36.7% host_mem=19.4%
+[09:39:56] cpu mode=fixed scope=workers target=10.0% drive=10.0% workers=1 host_cpu=36.7% host_mem=19.4%
 ```
 
 字段解释：
 
 - `mode`：当前模式
-- `target`：当前 CPU 目标占用
+- `scope`：当前 CPU 百分比的作用范围
+- `target`：当前 CPU 目标值
+- `drive`：当前实际施加到 worker 集合上的占用比例
 - `workers`：当前 CPU worker 数
 - `host_cpu`：主机实时 CPU 使用率
 - `host_mem`：主机实时内存使用率
@@ -388,12 +448,14 @@ stopped: time limit reached
 ### `combo` 输出
 
 ```text
-[09:39:56] combo cpu_target=10.0% workers=1 ram_target=64MB ram_current=64MB host_cpu=27.9% host_mem=19.6%
+[18:04:23] combo cpu_scope=workers cpu_target=10.0% cpu_drive=10.0% workers=1 ram_target=64MB ram_current=64MB host_cpu=5.1% host_mem=19.3%
 ```
 
 字段解释：
 
+- `cpu_scope`：CPU 百分比的作用范围
 - `cpu_target`：当前 CPU 目标值
+- `cpu_drive`：当前施加到 CPU worker 集合上的占用比例
 - `workers`：CPU worker 数
 - `ram_target`：目标内存值
 - `ram_current`：当前实际占用内存值
@@ -435,7 +497,9 @@ stopped: time limit reached
 
 ## 注意事项
 
-- `cpu` 的百分比是针对所选 worker 集合的目标值，不是对整台机器的绝对精确硬限幅。
+- `cpu --scope workers` 的百分比是针对所选 worker 集合的目标值。
+- `cpu --scope host` 会按整机 CPU 百分比做自适应控制。
+- 在 `--scope host` 下，如果目标超出当前 worker 数可提供的整机上限，程序会直接报错。
 - `--cores=0` 表示使用主机全部核心。
 - `ram` 会真实分配并触碰内存页，确保占用真正落到内存上。
 - `host_cpu` 和 `host_mem` 是主机实时状态，会受到主机上其他进程影响。
