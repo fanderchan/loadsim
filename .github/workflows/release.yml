@@ -113,6 +113,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download release archives
         uses: actions/download-artifact@v4
@@ -125,50 +127,17 @@ jobs:
           set -euo pipefail
           sha256sum dist/*.tar.gz > dist/checksums.txt
 
-      - name: Generate auto release notes
-        id: auto_notes
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const { owner, repo } = context.repo;
-            const tag = context.ref.replace('refs/tags/', '');
-            const response = await github.rest.repos.generateReleaseNotes({
-              owner,
-              repo,
-              tag_name: tag,
-            });
-
-            fs.mkdirSync('dist', { recursive: true });
-            fs.writeFileSync(
-              path.join('dist', 'auto-release-notes.md'),
-              response.data.body || '',
-            );
-
-            core.setOutput('name', response.data.name || tag);
-
       - name: Compose release notes
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-
-          TAG="${GITHUB_REF_NAME}"
-          SUMMARY_FILE=".github/release-notes/${TAG}.md"
-          BODY_FILE="dist/release-body.md"
-
-          : > "$BODY_FILE"
-
-          if [ -f "$SUMMARY_FILE" ]; then
-            cat "$SUMMARY_FILE" >> "$BODY_FILE"
-            printf "\n\n---\n\n## Auto Changelog\n\n" >> "$BODY_FILE"
-          fi
-
-          cat dist/auto-release-notes.md >> "$BODY_FILE"
+          bash scripts/compose_release_body.sh "${GITHUB_REF_NAME}" "dist/release-body.md"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.auto_notes.outputs.name }}
+          name: ${{ github.ref_name }}
           body_path: dist/release-body.md
           prerelease: ${{ contains(github.ref_name, '-beta.') }}
           files: |

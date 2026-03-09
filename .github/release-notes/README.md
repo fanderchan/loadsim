@@ -1,6 +1,10 @@
 # Release Notes
 
-If a file named `.github/release-notes/<tag>.md` exists, the release workflow prepends it to the GitHub-generated changelog for that tag.
+Each public tag must have a matching release note file:
+
+```text
+.github/release-notes/<tag>.md
+```
 
 Example:
 
@@ -8,8 +12,26 @@ Example:
 .github/release-notes/v0.3.0.md
 ```
 
-Recommended flow:
+Required structure:
 
-1. Add or update the summary file for the tag you are about to release.
-2. Commit and push the change to `main`.
-3. Create and push the tag.
+```md
+## [Add]
+- ...
+
+## [Change]
+- ...
+
+## [Fix]
+- ...
+
+## [Remove]
+- ...
+```
+
+Rules:
+
+1. Keep the four sections in the exact order above.
+2. Use `- None.` if a section is empty.
+3. Draft content against the previous formal release when possible.
+4. The GitHub release workflow appends a compare-link changelog automatically.
+5. Do not rely on GitHub auto-generated release notes as the final release body.

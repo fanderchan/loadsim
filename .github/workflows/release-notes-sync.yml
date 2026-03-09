@@ -72,56 +72,19 @@ jobs:
               throw error;
             }
 
-      - name: Generate auto release notes
-        if: steps.release_check.outputs.exists == 'true'
-        id: auto_notes
-        env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const { owner, repo } = context.repo;
-            const tag = process.env.RELEASE_TAG;
-            const response = await github.rest.repos.generateReleaseNotes({
-              owner,
-              repo,
-              tag_name: tag,
-            });
-
-            fs.mkdirSync('dist', { recursive: true });
-            fs.writeFileSync(
-              path.join('dist', 'auto-release-notes.md'),
-              response.data.body || '',
-            );
-
-            core.setOutput('name', response.data.name || tag);
-
       - name: Compose release notes
         if: steps.release_check.outputs.exists == 'true'
         env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-
-          SUMMARY_FILE=".github/release-notes/${RELEASE_TAG}.md"
-          BODY_FILE="dist/release-body.md"
-
-          : > "$BODY_FILE"
-
-          if [ -f "$SUMMARY_FILE" ]; then
-            cat "$SUMMARY_FILE" >> "$BODY_FILE"
-            printf "\n\n---\n\n## Auto Changelog\n\n" >> "$BODY_FILE"
-          fi
-
-          cat dist/auto-release-notes.md >> "$BODY_FILE"
+          bash scripts/compose_release_body.sh "${{ steps.tag.outputs.tag }}" "dist/release-body.md"
 
       - name: Update GitHub release
         if: steps.release_check.outputs.exists == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: ${{ steps.auto_notes.outputs.name }}
+          name: ${{ steps.tag.outputs.tag }}
           body_path: dist/release-body.md
           prerelease: ${{ contains(steps.tag.outputs.tag, '-beta.') }}
