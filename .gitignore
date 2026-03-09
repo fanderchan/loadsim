@@ -16,6 +16,8 @@
 
 # Local build artifacts and release staging
 build/
+dist/
+compat/
 backup/
 debug_output.txt
 loadsim
