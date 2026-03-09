@@ -144,7 +144,7 @@ Use "loadsim [command] --help" for more information about a command.
 
 ```text
 $ ./loadsim version
-LoadSim 0.3.0-beta.1
+LoadSim 0.3.0-beta.2
 ```
 
 ## 快速开始

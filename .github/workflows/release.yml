@@ -75,8 +75,39 @@ jobs:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*.tar.gz
 
-  release:
+  compat-centos7:
     needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download linux amd64 release archive
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux-amd64
+          path: dist
+
+      - name: Smoke test in CentOS 7
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="$(find dist -maxdepth 1 -name 'loadsim_*_linux_amd64.tar.gz' | head -n 1)"
+          test -n "$ARCHIVE"
+
+          mkdir -p compat
+          tar -xzf "$ARCHIVE" -C compat
+
+          EXTRACT_DIR="$(find compat -maxdepth 1 -mindepth 1 -type d | head -n 1)"
+          test -n "$EXTRACT_DIR"
+
+          docker run --rm \
+            -v "$PWD/$EXTRACT_DIR:/opt/loadsim:ro" \
+            centos:7 \
+            /bin/sh -lc '/opt/loadsim/loadsim version && /opt/loadsim/loadsim cpu --help >/dev/null && /opt/loadsim/loadsim ram --help >/dev/null && /opt/loadsim/loadsim combo --help >/dev/null'
+
+  release:
+    needs:
+      - build
+      - compat-centos7
     runs-on: ubuntu-latest
 
     steps:
