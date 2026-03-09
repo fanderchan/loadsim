@@ -1,4 +1,4 @@
-name: Release
+name: 发布
 
 on:
   push:
@@ -13,16 +13,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: 安装 Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Run tests
+      - name: 运行测试
         run: go test ./...
 
   build:
@@ -38,16 +38,16 @@ jobs:
             goarch: arm64
 
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: 安装 Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Build release archive
+      - name: 构建发布压缩包
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -69,7 +69,7 @@ jobs:
           cp README.md LICENSE THIRD_PARTY_NOTICES.md "$OUT_DIR/"
           tar -czf "$ARCHIVE" -C dist "$(basename "$OUT_DIR")"
 
-      - name: Upload release archive
+      - name: 上传发布压缩包
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -80,13 +80,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download linux amd64 release archive
+      - name: 下载 linux amd64 发布压缩包
         uses: actions/download-artifact@v4
         with:
           name: release-linux-amd64
           path: dist
 
-      - name: Smoke test in CentOS 7
+      - name: 在 CentOS 7 中做冒烟验证
         run: |
           set -euo pipefail
 
@@ -111,30 +111,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download release archives
+      - name: 下载发布压缩包
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      - name: Generate checksums
+      - name: 生成校验文件
         run: |
           set -euo pipefail
           sha256sum dist/*.tar.gz > dist/checksums.txt
 
-      - name: Compose release notes
+      - name: 组装发布说明
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           bash scripts/compose_release_body.sh "${GITHUB_REF_NAME}" "dist/release-body.md"
 
-      - name: Publish GitHub release
+      - name: 发布 GitHub 版本
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}

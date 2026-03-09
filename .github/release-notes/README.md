@@ -1,37 +1,37 @@
-# Release Notes
+# 发布说明
 
-Each public tag must have a matching release note file:
+每个公开 tag 都必须有对应的发布说明文件：
 
 ```text
 .github/release-notes/<tag>.md
 ```
 
-Example:
+例如：
 
 ```text
 .github/release-notes/v0.3.0.md
 ```
 
-Required structure:
+固定结构：
 
 ```md
-## [Add]
+## [新增]
 - ...
 
-## [Change]
+## [变更]
 - ...
 
-## [Fix]
+## [修复]
 - ...
 
-## [Remove]
+## [移除]
 - ...
 ```
 
-Rules:
+规则：
 
-1. Keep the four sections in the exact order above.
-2. Use `- None.` if a section is empty.
-3. Draft content against the previous formal release when possible.
-4. The GitHub release workflow appends a compare-link changelog automatically.
-5. Do not rely on GitHub auto-generated release notes as the final release body.
+1. 四个章节必须按上面的顺序出现。
+2. 如果某个章节没有内容，写 `- 无。`
+3. 发布说明正文优先对比上一个正式版来撰写。
+4. GitHub Release 会自动追加 compare 链接形式的“变更对比”。
+5. 不要把 GitHub 自动生成的 release notes 当成最终发布正文。

@@ -1,4 +1,4 @@
-name: Security
+name: 安全检查
 
 on:
   schedule:
@@ -13,17 +13,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: 安装 Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Install govulncheck
+      - name: 安装 govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
-      - name: Run govulncheck
+      - name: 运行 govulncheck
         run: govulncheck ./...

@@ -1,28 +1,44 @@
 # AGENTS.md
 
-## Release Rules
+## 语言规则
 
-- Do not use GitHub auto-generated release notes as the final release body.
-- For every release or pre-release tag, create `.github/release-notes/<tag>.md` before pushing the tag.
-- Every release note file must contain these four sections in this exact order:
-  - `## [Add]`
-  - `## [Change]`
-  - `## [Fix]`
-  - `## [Remove]`
-- If a section has no meaningful entries, write `- None.`
-- When drafting release note content, compare against the previous formal release tag if one exists.
-- If there is no previous formal release tag, treat the release as the initial stable release and summarize the current capability set.
-- The `## Changelog` section must not be AI-summarized text. It should only contain a compare link in the style:
-  - `**Full Changelog**: https://github.com/<owner>/<repo>/compare/<previous-tag>...<current-tag>`
-- The compare link may use the previous tag overall, including a pre-release tag, when that is the closest published tag.
+- 这是一个面向中文用户的项目。
+- 仓库内所有面对人的文案默认使用中文，包括但不限于：
+  - `README`
+  - 发布说明
+  - GitHub 发布页正文
+  - 工作流显示名称
+  - 提交说明
+  - 面向维护者的说明文档
+- 只有以下两类内容保留英文：
+  - 程序运行时输出
+  - 程序源码内部注释
 
-## Release Workflow Expectations
+## 发布规则
 
-- The release workflow should publish the prewritten release note file plus the compare-link changelog.
-- The release workflow should fail if the matching `.github/release-notes/<tag>.md` file is missing.
-- If release notes are updated after a tag has already been published, the sync workflow should update the existing GitHub release body.
+- 不要把 GitHub 自动生成的 release notes 作为最终发布正文。
+- 每个 release 或 pre-release tag 在推送前都必须创建对应文件：
+  - `.github/release-notes/<tag>.md`
+- 每个发布说明文件必须严格包含以下四个章节，并保持顺序一致：
+  - `## [新增]`
+  - `## [变更]`
+  - `## [修复]`
+  - `## [移除]`
+- 如果某一节没有实际内容，写：
+  - `- 无。`
+- 发布说明正文内容优先对比上一个正式版来总结。
+- 如果还没有上一个正式版，就把当前版本视为首个稳定版本，概括当前能力集。
+- `## 变更对比` 章节不能写 AI 总结，只能放 compare 链接，格式为：
+  - `**完整变更**: https://github.com/<owner>/<repo>/compare/<previous-tag>...<current-tag>`
+- compare 链接允许使用上一个整体 tag，包括 pre-release，只要它是最近的已发布标签即可。
 
-## Privacy Check
+## 发布流程要求
 
-- Before pushing public changes, scan the repository for secrets, keys, tokens, embedded credentials, and accidental private data.
-- Ignore `.git` metadata when checking source privacy, but explicitly report if source files or docs contain personal emails, secrets, or internal-only endpoints.
+- 发布工作流必须发布预先写好的发布说明文件，再追加 compare 链接。
+- 如果缺少匹配的 `.github/release-notes/<tag>.md` 文件，发布流程必须失败。
+- 如果某个 tag 已经发布，之后又更新了对应发布说明文件，同步工作流应自动更新已有 GitHub 发布页正文。
+
+## 隐私检查
+
+- 对公开仓库推送前，必须扫描源码和文档里的密钥、令牌、凭据、私有地址和误提交的敏感信息。
+- 隐私检查时忽略 `.git` 元数据，但如果源码、文档或工作流里包含个人邮箱、密钥、内部地址或账号信息，必须明确指出。

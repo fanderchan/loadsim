@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
-  echo "usage: $0 <tag> <output-file>" >&2
+  echo "用法: $0 <tag> <output-file>" >&2
   exit 1
 fi
 
@@ -12,7 +12,7 @@ REPO_SLUG="${GITHUB_REPOSITORY:-}"
 NOTES_FILE=".github/release-notes/${TAG}.md"
 
 if [ ! -f "$NOTES_FILE" ]; then
-  echo "missing release notes file: $NOTES_FILE" >&2
+  echo "缺少发布说明文件: $NOTES_FILE" >&2
   exit 1
 fi
 
@@ -33,11 +33,11 @@ PREVIOUS_TAG="$(
     '
 )"
 
-printf "\n\n## Changelog\n\n" >>"$OUTPUT_FILE"
+printf "\n\n## 变更对比\n\n" >>"$OUTPUT_FILE"
 
 if [ -n "$PREVIOUS_TAG" ] && [ -n "$REPO_SLUG" ]; then
-  printf "**Full Changelog**: https://github.com/%s/compare/%s...%s\n" \
+  printf "**完整变更**: https://github.com/%s/compare/%s...%s\n" \
     "$REPO_SLUG" "$PREVIOUS_TAG" "$TAG" >>"$OUTPUT_FILE"
 else
-  printf "Initial release. No previous tag is available for comparison.\n" >>"$OUTPUT_FILE"
+  printf "首个发布版本，当前没有可用于对比的上一个标签。\n" >>"$OUTPUT_FILE"
 fi

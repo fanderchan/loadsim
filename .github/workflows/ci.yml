@@ -1,4 +1,4 @@
-name: CI
+name: 持续集成
 
 on:
   push:
@@ -15,23 +15,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: 安装 Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify formatting
+      - name: 检查格式
         run: test -z "$(gofmt -l .)"
 
-      - name: Run vet
+      - name: 运行 vet
         run: go vet ./...
 
-      - name: Run tests
+      - name: 运行测试
         run: go test ./...
 
-      - name: Build
+      - name: 构建
         run: go build ./...
