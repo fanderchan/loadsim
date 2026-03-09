@@ -114,3 +114,47 @@ func TestRAMResizeToExactTarget(t *testing.T) {
 		t.Fatalf("currentMB=%d want=0 after clear", stressor.currentMB)
 	}
 }
+
+func TestRAMRateLimitCapsTargetChange(t *testing.T) {
+	stressor, err := NewRAMStressor(RAMConfig{
+		Mode:              ModeWave,
+		MinSizeMB:         0,
+		MaxSizeMB:         256,
+		Period:            60 * time.Second,
+		ControlInterval:   250 * time.Millisecond,
+		RateLimitMBPerSec: 20,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	stressor.currentMB = 10
+	if got := stressor.limitTargetChange(100); got != 15 {
+		t.Fatalf("limitTargetChange grow got %d want 15", got)
+	}
+
+	stressor.currentMB = 100
+	if got := stressor.limitTargetChange(0); got != 95 {
+		t.Fatalf("limitTargetChange shrink got %d want 95", got)
+	}
+}
+
+func TestRAMApplyDesiredTargetRespectsStartupRateLimit(t *testing.T) {
+	stressor, err := NewRAMStressor(RAMConfig{
+		Mode:              ModeFixed,
+		SizeMB:            128,
+		ControlInterval:   250 * time.Millisecond,
+		RateLimitMBPerSec: 16,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	stressor.applyDesiredTarget()
+	if stressor.currentMB != 4 {
+		t.Fatalf("currentMB=%d want=4 after startup-limited growth", stressor.currentMB)
+	}
+	if stressor.targetMB != 4 {
+		t.Fatalf("targetMB=%d want=4 after startup-limited growth", stressor.targetMB)
+	}
+}

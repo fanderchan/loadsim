@@ -10,18 +10,23 @@ import (
 )
 
 type RAMConfig struct {
-	Mode      Mode
-	SizeMB    int
-	MinSizeMB int
-	MaxSizeMB int
-	Period    time.Duration
-	BlockMB   int
+	Mode              Mode
+	SizeMB            int
+	MinSizeMB         int
+	MaxSizeMB         int
+	Period            time.Duration
+	BlockMB           int
+	ControlInterval   time.Duration
+	RateLimitMBPerSec int
 }
 
 type RAMStatus struct {
-	Mode      Mode
-	TargetMB  int
-	CurrentMB int
+	Mode        Mode
+	TargetMB    int
+	AppliedMB   int
+	CurrentMB   int
+	BlockMB     int
+	RateLimitMB int
 }
 
 type ramBlock struct {
@@ -45,7 +50,10 @@ type RAMStressor struct {
 
 func NewRAMStressor(config RAMConfig) (*RAMStressor, error) {
 	if config.BlockMB <= 0 {
-		config.BlockMB = 64
+		config.BlockMB = 16
+	}
+	if config.ControlInterval <= 0 {
+		config.ControlInterval = 250 * time.Millisecond
 	}
 
 	switch config.Mode {
@@ -83,12 +91,6 @@ func (s *RAMStressor) Start() error {
 
 	s.running = true
 	s.startedAt = time.Now()
-	switch s.config.Mode {
-	case ModeFixed:
-		s.targetMB = s.config.SizeMB
-	case ModeWave:
-		s.targetMB = s.config.MinSizeMB
-	}
 
 	s.wg.Add(1)
 	go s.controlLoop()
@@ -122,47 +124,47 @@ func (s *RAMStressor) Status() RAMStatus {
 	defer s.lock.RUnlock()
 
 	return RAMStatus{
-		Mode:      s.config.Mode,
-		TargetMB:  s.targetMB,
-		CurrentMB: s.currentMB,
+		Mode:        s.config.Mode,
+		TargetMB:    s.targetMB,
+		AppliedMB:   s.currentMB,
+		CurrentMB:   s.currentMB,
+		BlockMB:     s.config.BlockMB,
+		RateLimitMB: s.config.RateLimitMBPerSec,
 	}
 }
 
 func (s *RAMStressor) controlLoop() {
 	defer s.wg.Done()
 
-	tick := 250 * time.Millisecond
-	if s.config.Mode == ModeWave {
-		candidate := s.config.Period / 40
-		if candidate >= 50*time.Millisecond && candidate < tick {
-			tick = candidate
-		}
-	}
-
-	ticker := time.NewTicker(tick)
+	ticker := time.NewTicker(s.config.ControlInterval)
 	defer ticker.Stop()
 
-	s.resizeTo(s.initialTarget())
+	s.applyDesiredTarget()
 
 	for {
 		select {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			target := s.initialTarget()
-			if s.config.Mode == ModeWave {
-				target = s.waveTarget(time.Since(s.startedAt))
-			}
-			s.resizeTo(target)
+			s.applyDesiredTarget()
 		}
 	}
 }
 
-func (s *RAMStressor) initialTarget() int {
+func (s *RAMStressor) desiredTarget() int {
 	if s.config.Mode == ModeWave {
 		return s.config.MinSizeMB
 	}
 	return s.config.SizeMB
+}
+
+func (s *RAMStressor) applyDesiredTarget() {
+	target := s.desiredTarget()
+	if s.config.Mode == ModeWave {
+		target = s.waveTarget(time.Since(s.startedAt))
+	}
+	target = s.limitTargetChange(target)
+	s.resizeTo(target)
 }
 
 func (s *RAMStressor) waveTarget(elapsed time.Duration) int {
@@ -215,6 +217,30 @@ func (s *RAMStressor) resizeTo(targetMB int) {
 			s.blocks[lastIdx].sizeMB = newSize
 			s.currentMB = targetMB
 		}
+	}
+}
+
+func (s *RAMStressor) limitTargetChange(targetMB int) int {
+	if s.config.RateLimitMBPerSec <= 0 {
+		return targetMB
+	}
+
+	s.lock.RLock()
+	currentMB := s.currentMB
+	s.lock.RUnlock()
+
+	maxDelta := int(math.Ceil(float64(s.config.RateLimitMBPerSec) * s.config.ControlInterval.Seconds()))
+	if maxDelta < 1 {
+		maxDelta = 1
+	}
+
+	switch {
+	case targetMB > currentMB+maxDelta:
+		return currentMB + maxDelta
+	case targetMB < currentMB-maxDelta:
+		return currentMB - maxDelta
+	default:
+		return targetMB
 	}
 }
 

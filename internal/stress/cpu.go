@@ -20,9 +20,17 @@ const (
 	ScopeHost    CPUScope = "host"
 )
 
+type CPUIdleMode string
+
+const (
+	IdleModePark CPUIdleMode = "park"
+	IdleModeTrim CPUIdleMode = "trim"
+)
+
 type CPUConfig struct {
 	Mode            Mode
 	Scope           CPUScope
+	IdleMode        CPUIdleMode
 	Percent         float64
 	MinPercent      float64
 	MaxPercent      float64
@@ -31,12 +39,16 @@ type CPUConfig struct {
 	Cycle           time.Duration
 	ControlInterval time.Duration
 	SampleDuration  time.Duration
+	DeadbandPercent float64
+	MaxStepPercent  float64
 }
 
 type CPUStatus struct {
 	Mode             Mode
 	Scope            CPUScope
-	Cores            int
+	IdleMode         CPUIdleMode
+	ActiveWorkers    int
+	MaxWorkers       int
 	RequestedPercent float64
 	AppliedPercent   float64
 	LastHostPercent  float64
@@ -60,6 +72,7 @@ type CPUStressor struct {
 
 type cpuWorker struct {
 	duty atomic.Uint32
+	stop chan struct{}
 }
 
 func NewCPUStressor(config CPUConfig) (*CPUStressor, error) {
@@ -78,14 +91,26 @@ func NewCPUStressor(config CPUConfig) (*CPUStressor, error) {
 	if config.SampleDuration <= 0 {
 		config.SampleDuration = 200 * time.Millisecond
 	}
+	if config.DeadbandPercent <= 0 {
+		config.DeadbandPercent = 1.0
+	}
+	if config.MaxStepPercent <= 0 {
+		config.MaxStepPercent = 10.0
+	}
 	if config.Scope == "" {
 		config.Scope = ScopeWorkers
+	}
+	if config.IdleMode == "" {
+		config.IdleMode = IdleModePark
 	}
 	if config.Cores <= 0 {
 		return nil, fmt.Errorf("worker core count must be greater than zero")
 	}
 	if config.Scope != ScopeWorkers && config.Scope != ScopeHost {
 		return nil, fmt.Errorf("CPU scope must be workers or host")
+	}
+	if config.IdleMode != IdleModePark && config.IdleMode != IdleModeTrim {
+		return nil, fmt.Errorf("CPU idle mode must be park or trim")
 	}
 
 	switch config.Mode {
@@ -149,15 +174,9 @@ func (s *CPUStressor) Start() error {
 
 	s.running = true
 	s.startedAt = time.Now()
-	s.workers = make([]*cpuWorker, s.config.Cores)
-	for i := 0; i < s.config.Cores; i++ {
-		worker := &cpuWorker{}
-		s.workers[i] = worker
-		s.workerWG.Add(1)
-		go func(w *cpuWorker) {
-			defer s.workerWG.Done()
-			runCPUWorker(s.stopCh, w, s.config.Cycle)
-		}(worker)
+	s.workers = make([]*cpuWorker, 0, s.config.Cores)
+	if s.config.IdleMode == IdleModePark {
+		s.ensureWorkersLocked(s.config.Cores)
 	}
 
 	switch s.config.Mode {
@@ -214,7 +233,9 @@ func (s *CPUStressor) Status() CPUStatus {
 	return CPUStatus{
 		Mode:             s.config.Mode,
 		Scope:            s.config.Scope,
-		Cores:            s.config.Cores,
+		IdleMode:         s.config.IdleMode,
+		ActiveWorkers:    activeWorkerCount(s.appliedPercent, s.config.Cores),
+		MaxWorkers:       s.config.Cores,
 		RequestedPercent: s.requestedPercent,
 		AppliedPercent:   s.appliedPercent,
 		LastHostPercent:  s.lastHostPercent,
@@ -225,13 +246,6 @@ func (s *CPUStressor) controlLoop() {
 	defer s.controllerWG.Done()
 
 	tick := s.config.ControlInterval
-	if s.config.Mode == ModeWave && s.config.Scope == ScopeWorkers {
-		candidate := s.config.Period / 40
-		if candidate >= 50*time.Millisecond {
-			tick = candidate
-		}
-	}
-
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
@@ -267,11 +281,15 @@ func (s *CPUStressor) controlTick() {
 	s.requestedPercent = requested
 	s.lastHostPercent = hostUsage
 
-	currentDriveHostPercent := workerPercentToHostPercent(s.appliedPercent, s.config.Cores, runtime.NumCPU())
-	nextDriveHostPercent := requested - maxFloat(hostUsage-currentDriveHostPercent, 0)
-	nextDriveHostPercent = clampFloat(nextDriveHostPercent, 0, maxReachableHostPercent(s.config.Cores, runtime.NumCPU()))
-
-	nextAppliedPercent := hostPercentToWorkerPercent(nextDriveHostPercent, s.config.Cores, runtime.NumCPU())
+	nextAppliedPercent := nextHostAdaptiveAppliedPercent(
+		requested,
+		hostUsage,
+		s.appliedPercent,
+		s.config.Cores,
+		runtime.NumCPU(),
+		s.config.DeadbandPercent,
+		s.config.MaxStepPercent,
+	)
 	s.applyTargetLocked(nextAppliedPercent)
 }
 
@@ -291,6 +309,18 @@ func (s *CPUStressor) applyTargetLocked(percent float64) {
 	activeUnits := float64(s.config.Cores) * percent / 100
 	fullWorkers := int(math.Floor(activeUnits))
 	partial := activeUnits - float64(fullWorkers)
+	requiredWorkers := fullWorkers
+	if partial > 0 {
+		requiredWorkers++
+	}
+
+	switch s.config.IdleMode {
+	case IdleModeTrim:
+		s.ensureWorkersLocked(requiredWorkers)
+		s.trimWorkersLocked(requiredWorkers)
+	default:
+		s.ensureWorkersLocked(s.config.Cores)
+	}
 
 	for idx, worker := range s.workers {
 		switch {
@@ -304,10 +334,41 @@ func (s *CPUStressor) applyTargetLocked(percent float64) {
 	}
 }
 
+func (s *CPUStressor) ensureWorkersLocked(count int) {
+	if count < 0 {
+		count = 0
+	}
+	if count > s.config.Cores {
+		count = s.config.Cores
+	}
+	for len(s.workers) < count {
+		worker := &cpuWorker{stop: make(chan struct{})}
+		s.workers = append(s.workers, worker)
+		s.workerWG.Add(1)
+		go func(w *cpuWorker) {
+			defer s.workerWG.Done()
+			runCPUWorker(s.stopCh, w, s.config.Cycle)
+		}(worker)
+	}
+}
+
+func (s *CPUStressor) trimWorkersLocked(count int) {
+	if count < 0 {
+		count = 0
+	}
+	for len(s.workers) > count {
+		last := s.workers[len(s.workers)-1]
+		close(last.stop)
+		s.workers = s.workers[:len(s.workers)-1]
+	}
+}
+
 func runCPUWorker(stop <-chan struct{}, worker *cpuWorker, cycle time.Duration) {
 	for {
 		select {
 		case <-stop:
+			return
+		case <-worker.stop:
 			return
 		default:
 		}
@@ -315,30 +376,32 @@ func runCPUWorker(stop <-chan struct{}, worker *cpuWorker, cycle time.Duration) 
 		duty := worker.duty.Load()
 		switch {
 		case duty == 0:
-			if !sleepOrStop(stop, cycle) {
+			if !sleepOrStop(stop, worker.stop, cycle) {
 				return
 			}
 		case duty >= dutyScale:
-			if !busyUntil(stop, time.Now().Add(cycle)) {
+			if !busyUntil(stop, worker.stop, time.Now().Add(cycle)) {
 				return
 			}
 		default:
 			busyFor := time.Duration(int64(cycle) * int64(duty) / dutyScale)
-			if busyFor > 0 && !busyUntil(stop, time.Now().Add(busyFor)) {
+			if busyFor > 0 && !busyUntil(stop, worker.stop, time.Now().Add(busyFor)) {
 				return
 			}
-			if rest := cycle - busyFor; rest > 0 && !sleepOrStop(stop, rest) {
+			if rest := cycle - busyFor; rest > 0 && !sleepOrStop(stop, worker.stop, rest) {
 				return
 			}
 		}
 	}
 }
 
-func busyUntil(stop <-chan struct{}, deadline time.Time) bool {
+func busyUntil(stop <-chan struct{}, workerStop <-chan struct{}, deadline time.Time) bool {
 	var sink float64
 	for time.Now().Before(deadline) {
 		select {
 		case <-stop:
+			return false
+		case <-workerStop:
 			return false
 		default:
 		}
@@ -350,12 +413,14 @@ func busyUntil(stop <-chan struct{}, deadline time.Time) bool {
 	return true
 }
 
-func sleepOrStop(stop <-chan struct{}, duration time.Duration) bool {
+func sleepOrStop(stop <-chan struct{}, workerStop <-chan struct{}, duration time.Duration) bool {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 
 	select {
 	case <-stop:
+		return false
+	case <-workerStop:
 		return false
 	case <-timer.C:
 		return true
@@ -408,9 +473,59 @@ func sampleHostCPUPercent(sampleDuration time.Duration) (float64, error) {
 	return percentages[0], nil
 }
 
+func activeWorkerCount(appliedPercent float64, cores int) int {
+	if cores <= 0 {
+		return 0
+	}
+
+	activeUnits := float64(cores) * clampFloat(appliedPercent, 0, 100) / 100
+	fullWorkers := int(math.Floor(activeUnits))
+	partial := activeUnits - float64(fullWorkers)
+	if partial > 0 {
+		fullWorkers++
+	}
+	if fullWorkers > cores {
+		return cores
+	}
+	return fullWorkers
+}
+
 func (s *CPUStressor) currentRequestedPercent() float64 {
 	if s.config.Mode == ModeWave {
 		return s.wavePercent(time.Since(s.startedAt))
 	}
 	return s.config.Percent
+}
+
+func nextHostAdaptiveAppliedPercent(
+	requestedHostPercent float64,
+	observedHostPercent float64,
+	currentAppliedPercent float64,
+	workers int,
+	hostCPUs int,
+	deadbandPercent float64,
+	maxStepPercent float64,
+) float64 {
+	requestedHostPercent = clampFloat(requestedHostPercent, 0, 100)
+	observedHostPercent = clampFloat(observedHostPercent, 0, 100)
+	currentAppliedPercent = clampFloat(currentAppliedPercent, 0, 100)
+	maxStepPercent = clampFloat(maxStepPercent, 0, 100)
+
+	currentDriveHostPercent := workerPercentToHostPercent(currentAppliedPercent, workers, hostCPUs)
+	if math.Abs(observedHostPercent-requestedHostPercent) <= deadbandPercent {
+		return currentAppliedPercent
+	}
+
+	nextDriveHostPercent := requestedHostPercent - maxFloat(observedHostPercent-currentDriveHostPercent, 0)
+	nextDriveHostPercent = clampFloat(nextDriveHostPercent, 0, maxReachableHostPercent(workers, hostCPUs))
+
+	desiredAppliedPercent := hostPercentToWorkerPercent(nextDriveHostPercent, workers, hostCPUs)
+	delta := desiredAppliedPercent - currentAppliedPercent
+	if delta > maxStepPercent {
+		delta = maxStepPercent
+	} else if delta < -maxStepPercent {
+		delta = -maxStepPercent
+	}
+
+	return clampFloat(currentAppliedPercent+delta, 0, 100)
 }
